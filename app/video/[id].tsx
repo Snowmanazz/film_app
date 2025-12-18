@@ -76,14 +76,22 @@ export default function VideoScreen() {
           </View>
 
           {/* 2. 视频播放器 */}
-          <View style={{ height: VIDEO_HEIGHT, backgroundColor: '#000' }}>
+          <View style={{ height: VIDEO_HEIGHT, backgroundColor: '#000', zIndex: 20, justifyContent: 'center', alignItems: 'center' }}>
             <Video
                 style={styles.video}
                 source={{ uri: videoData.videoSourceUrl || 'https://d23dyxeqlo5psv.cloudfront.net/big_buck_bunny.mp4' }}
-                useNativeControls
+                useNativeControls={true}
                 resizeMode={ResizeMode.CONTAIN}
-                shouldPlay={false}
+                shouldPlay={true}
+                isLooping={false}
             />
+            {Platform.OS === 'web' && (videoData.videoSourceUrl || '').includes('.m3u8') && (
+              <View style={{ position: 'absolute', backgroundColor: 'rgba(0,0,0,0.7)', padding: 10, borderRadius: 8 }}>
+                 <Text style={{ color: '#FFF', textAlign: 'center' }}>
+                   Chrome/Edge 不支持原生播放 HLS (m3u8)。{'\n'}请使用 Safari 或 手机 App 查看。
+                 </Text>
+              </View>
+            )}
           </View>
 
           {/* 3. 标题信息区 (现在固定在这里，不随下面滚动) */}
