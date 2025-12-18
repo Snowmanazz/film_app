@@ -1,5 +1,5 @@
-import React from 'react';
-import { View, Text, ScrollView, TextInput, StyleSheet, Image, Dimensions, Platform } from 'react-native';
+import React, { useEffect, useState } from 'react';
+import { View, Text, ScrollView, TextInput, StyleSheet, Image, Dimensions, Platform, ActivityIndicator } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Search, Film } from 'lucide-react-native';
 import { useRouter } from 'expo-router';
@@ -7,26 +7,53 @@ import Carousel from 'react-native-reanimated-carousel';
 import MovingBackground from '../../components/MovingBackground';
 import { GlassView, BouncyBtn } from '../../components/IslandComponents';
 import { BlurView } from 'expo-blur';
+import { getBanners, getHotMovies, getRecentUpdates } from '../../app/api/endpoints';
 
 const { width } = Dimensions.get('window');
 const BANNER_WIDTH = width - 40;
 const BANNER_HEIGHT = BANNER_WIDTH * 0.56;
 
-const BANNERS = ['https://picsum.photos/id/12/800/450', 'https://picsum.photos/id/24/800/450'];
-const HOT_MOVIES = [
-  { id: 1, title: '沙丘2', poster: 'https://picsum.photos/id/30/200/300', rate: '9.4' },
-  { id: 2, title: '奥本海默', poster: 'https://picsum.photos/id/40/200/300', rate: '9.6' },
-  { id: 3, title: '星际穿越', poster: 'https://picsum.photos/id/50/200/300', rate: '9.8' },
-  { id: 4, title: '盗梦空间', poster: 'https://picsum.photos/id/60/200/300', rate: '9.2' },
-];
-
 export default function HomeScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  
+  const [banners, setBanners] = useState<any[]>([]);
+  const [hotMovies, setHotMovies] = useState<any[]>([]);
+  const [recentUpdates, setRecentUpdates] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    async function fetchData() {
+      try {
+        const [bannersData, hotData, recentData] = await Promise.all([
+          getBanners(),
+          getHotMovies(),
+          getRecentUpdates()
+        ]);
+        setBanners(bannersData);
+        setHotMovies(hotData);
+        setRecentUpdates(recentData);
+      } catch (e) {
+        console.error("Failed to load home data", e);
+      } finally {
+        setLoading(false);
+      }
+    }
+    fetchData();
+  }, []);
 
   // 动态计算顶部和底部间距
   const HEADER_HEIGHT = 56;
   const TOP_SPACE = insets.top + HEADER_HEIGHT + 20;
+
+  if (loading) {
+    return (
+      <View style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
+        <MovingBackground />
+        <ActivityIndicator size="large" color="#007AFF" />
+      </View>
+    );
+  }
 
   return (
     <View style={styles.container}>
@@ -65,18 +92,19 @@ export default function HomeScreen() {
         showsVerticalScrollIndicator={false}
       >
         {/* === 轮播图 === */}
+        {banners.length > 0 && (
         <View style={styles.carouselWrapper}>
            <GlassView style={styles.carouselGlass} intensity={40}>
              <Carousel
                 loop width={BANNER_WIDTH} height={BANNER_HEIGHT} autoPlay={true}
-                data={BANNERS} scrollAnimationDuration={1000}
-                panGestureHandlerProps={{ activeOffsetX: [-10, 10] }}
+                data={banners} scrollAnimationDuration={1000}
                 renderItem={({ item }) => (
-                  <Image source={{ uri: item }} style={styles.bannerImg} />
+                  <Image source={{ uri: item.imageUrl }} style={styles.bannerImg} />
                 )}
              />
            </GlassView>
         </View>
+        )}
 
         {/* === 热门推荐 === */}
         <View style={styles.sectionHeader}>
@@ -87,7 +115,7 @@ export default function HomeScreen() {
         </View>
 
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 20 }}>
-           {HOT_MOVIES.map(m => (
+           {hotMovies.map(m => (
              <BouncyBtn key={m.id} style={styles.movieCard} onPress={() => router.push(`/video/${m.id}`)}>
                <Image source={{ uri: m.poster }} style={styles.poster} />
                <GlassView style={styles.rateTag} intensity={60}>
@@ -103,12 +131,12 @@ export default function HomeScreen() {
           <Text style={styles.sectionTitle}>最近更新</Text>
         </View>
         <View style={{paddingHorizontal: 20}}>
-           {[1,2,3,4,5].map(i => (
-             <GlassView key={i} style={styles.listRow} intensity={30}>
-                <Image source={{ uri: `https://picsum.photos/id/${70+i}/100/100` }} style={styles.listImg} />
+           {recentUpdates.map(item => (
+             <GlassView key={item.id} style={styles.listRow} intensity={30}>
+                <Image source={{ uri: item.poster }} style={styles.listImg} />
                 <View style={{justifyContent: 'center', flex: 1}}>
-                   <Text style={{fontWeight:'bold', fontSize: 15, color: '#333'}}>更新剧集名称 {i}</Text>
-                   <Text style={{color:'#666', fontSize:12, marginTop:4}}>第 {i+5} 集 · 刚刚更新</Text>
+                   <Text style={{fontWeight:'bold', fontSize: 15, color: '#333'}}>{item.title}</Text>
+                   <Text style={{color:'#666', fontSize:12, marginTop:4}}>{item.updateInfo} · {item.updateTime}</Text>
                 </View>
              </GlassView>
            ))}

@@ -1,27 +1,16 @@
-import React, { useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image, Dimensions } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image, Dimensions, ActivityIndicator } from 'react-native';
 import { Stack, useRouter } from 'expo-router';
 import { ArrowLeft, Filter, ChevronDown, RefreshCw } from 'lucide-react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Slider from '@react-native-community/slider';
 import * as Haptics from 'expo-haptics';
 import Animated, { useSharedValue, useAnimatedStyle, withSpring } from 'react-native-reanimated';
+import { getAppConfig, searchVideos } from './api/endpoints';
 
 const { width } = Dimensions.get('window');
 // 计算高级筛选 4列 布局：(屏幕宽 - 外部padding40 - 中间gap24) / 4
 const GRID_ITEM_WIDTH = (width - 40 - 24) / 4;
-
-// 数据源
-const CATEGORIES = ['全部影片', '电影', '电视剧', '综艺', '动漫', '纪录片'];
-const FILTERS = {
-  genre: ['全部', '动作', '喜剧', '爱情', '科幻', '悬疑', '惊悚', '恐怖'],
-  year: ['全部', '2025', '2024', '2023', '2022', '2021', '2010s', '更早'],
-  region: ['全部', '大陆', '美国', '日本', '韩国', '英国', '法国', '其他']
-};
-const MOVIES = Array(12).fill(0).map((_, i) => ({
-  id: i, title: `示例影片 ${i+1}`, score: '9.2', year: '2023', tags: '科幻 / 冒险',
-  poster: `https://picsum.photos/id/${30+i}/200/300`
-}));
 
 // 弹性按钮组件
 const BouncyBtn = ({ children, onPress, active, style }: any) => {
@@ -39,7 +28,7 @@ const BouncyBtn = ({ children, onPress, active, style }: any) => {
       <Animated.View style={[style, animatedStyle, active && styles.activeChip]}>
         {React.Children.map(children, child => {
           if (React.isValidElement(child) && child.type === Text) {
-             return React.cloneElement(child as any, { style: [child.props.style, active && styles.activeChipText] });
+             return React.cloneElement(child as React.ReactElement<any>, { style: [(child.props as any).style, active && styles.activeChipText] });
           }
           return children;
         })}
@@ -50,12 +39,42 @@ const BouncyBtn = ({ children, onPress, active, style }: any) => {
 
 export default function FilterScreen() {
   const router = useRouter();
-  const [activeCat, setActiveCat] = useState('全部影片');
+  
+  const [categories, setCategories] = useState<any[]>([]);
+  const [filterConfig, setFilterConfig] = useState<any>({ genre: [], year: [], region: [] });
+
+  const [activeCat, setActiveCat] = useState('all');
   const [selections, setSelections] = useState({ genre: '全部', year: '全部', region: '全部' });
   const [rating, setRating] = useState(7);
+  const [movies, setMovies] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  // === 初始配置 ===
+  useEffect(() => {
+    getAppConfig().then(res => {
+        setCategories(res.categories);
+        setFilterConfig(res.filters);
+    });
+  }, []);
+
+  // === 搜索 ===
+  useEffect(() => {
+    setLoading(true);
+    searchVideos({
+        category: activeCat,
+        genre: selections.genre === '全部' ? '' : selections.genre,
+        year: selections.year === '全部' ? '' : selections.year,
+        region: selections.region === '全部' ? '' : selections.region,
+        minRating: rating
+    }).then(res => {
+        setMovies(res.list);
+        setLoading(false);
+    });
+  }, [activeCat, selections, rating]);
+
 
   // 渲染 4列 Grid
-  const RenderSection = ({ title, data, type }: any) => (
+  const RenderSection = ({ title, data = [], type }: any) => (
     <View style={styles.sectionBox}>
       <Text style={styles.sectionLabel}>{title}</Text>
       <View style={styles.gridContainer}>
@@ -88,9 +107,9 @@ export default function FilterScreen() {
 
           {/* 1. 顶部横向分类 (Pills) */}
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.hScroll}>
-            {CATEGORIES.map(cat => (
-              <BouncyBtn key={cat} active={activeCat === cat} onPress={() => setActiveCat(cat)} style={styles.catPill}>
-                <Text style={styles.catText}>{cat}</Text>
+            {categories.map(cat => (
+              <BouncyBtn key={cat.id} active={activeCat === cat.id} onPress={() => setActiveCat(cat.id)} style={styles.catPill}>
+                <Text style={styles.catText}>{cat.name}</Text>
               </BouncyBtn>
             ))}
           </ScrollView>
@@ -102,9 +121,9 @@ export default function FilterScreen() {
               <Text style={styles.filterHeaderTitle}>高级筛选</Text>
             </View>
 
-            <RenderSection title="影片类型" data={FILTERS.genre} type="genre" />
-            <RenderSection title="上映年份" data={FILTERS.year} type="year" />
-            <RenderSection title="地区" data={FILTERS.region} type="region" />
+            <RenderSection title="影片类型" data={filterConfig.genre} type="genre" />
+            <RenderSection title="上映年份" data={filterConfig.year} type="year" />
+            <RenderSection title="地区" data={filterConfig.region} type="region" />
 
             {/* 评分滑块 */}
             <View style={styles.sliderBox}>
@@ -132,8 +151,13 @@ export default function FilterScreen() {
             </TouchableOpacity>
           </View>
 
+          {loading ? (
+             <View style={{height: 200, justifyContent:'center', alignItems:'center'}}>
+                <ActivityIndicator color="#FF3B30" />
+             </View>
+          ) : (
           <View style={styles.movieGrid}>
-            {MOVIES.map(m => (
+            {movies.map(m => (
               <TouchableOpacity key={m.id} style={styles.movieCard} activeOpacity={0.8} onPress={() => router.push(`/video/${m.id}`)}>
                 <View style={styles.posterBox}>
                   <Image source={{ uri: m.poster }} style={styles.poster} />
@@ -145,6 +169,7 @@ export default function FilterScreen() {
               </TouchableOpacity>
             ))}
           </View>
+          )}
 
           {/* 加载更多 */}
           <TouchableOpacity style={styles.loadMore}>

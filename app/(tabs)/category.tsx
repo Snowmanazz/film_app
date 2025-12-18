@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, Image, Dimensions, TouchableOpacity, Platform } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import { View, Text, StyleSheet, ScrollView, Image, Dimensions, TouchableOpacity, Platform, ActivityIndicator } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Filter, ChevronDown, ChevronUp, Search } from 'lucide-react-native';
 import Slider from '@react-native-community/slider';
@@ -12,20 +12,51 @@ import Animated, {
 } from 'react-native-reanimated';
 import MovingBackground from '../../components/MovingBackground';
 import { GlassView, BouncyBtn } from '../../components/IslandComponents';
+import { getAppConfig, searchVideos } from '../../app/api/endpoints';
+import { useRouter } from 'expo-router';
 
 const { width } = Dimensions.get('window');
 const GRID_ITEM_WIDTH = (width - 40 - 32 - 24) / 4;
 const MOVIE_ITEM_WIDTH = (width - 30 - 20) / 3;
 
-const MAIN_CATS = ['全部', '电影', '电视剧', '综艺', '动漫', '纪录片'];
-const FILTERS = { genre: ['全部', '动作', '喜剧', '爱情'], year: ['全部', '2024', '2023'], region: ['全部', '大陆', '美国'] };
-const MOVIES = Array(15).fill(0).map((_, i) => ({ id: i, title: `示例影片 ${i}`, score: '9.2', poster: `https://picsum.photos/id/${50+i}/200/300` }));
-
 export default function CategoryScreen() {
   const insets = useSafeAreaInsets();
-  const [activeMain, setActiveMain] = useState('全部');
+  const router = useRouter();
+
+  const [categories, setCategories] = useState<any[]>([]);
+  const [filters, setFilters] = useState<any>({ genre: [], year: [], region: [] });
+  
+  const [activeMain, setActiveMain] = useState('all');
   const [selections, setSelections] = useState({ genre: '全部', year: '全部', region: '全部' });
   const [rating, setRating] = useState(7.0);
+  const [movies, setMovies] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  // === 初始加载配置 ===
+  useEffect(() => {
+    getAppConfig().then(res => {
+      setCategories(res.categories);
+      setFilters(res.filters);
+      // Set initial active main category if available
+      if (res.categories.length > 0) setActiveMain(res.categories[0].id);
+    });
+  }, []);
+
+  // === 监听筛选变化加载列表 ===
+  useEffect(() => {
+    setLoading(true);
+    searchVideos({
+      category: activeMain,
+      genre: selections.genre === '全部' ? '' : selections.genre,
+      year: selections.year === '全部' ? '' : selections.year,
+      region: selections.region === '全部' ? '' : selections.region,
+      minRating: rating
+    }).then(res => {
+      setMovies(res.list);
+      setLoading(false);
+    });
+  }, [activeMain, selections, rating]);
+
 
   // === 动画优化 ===
   const [expanded, setExpanded] = useState(false);
@@ -62,7 +93,7 @@ export default function CategoryScreen() {
   // 内容起始位置 = 头部位置 + 高度 + 间距
   const CONTENT_PADDING_TOP = HEADER_TOP + HEADER_HEIGHT + 15;
 
-  const RenderGrid = ({ data, type }: any) => (
+  const RenderGrid = ({ data = [], type }: any) => (
     <View style={styles.gridContainer}>
       {data.map((item: string) => (
         <BouncyBtn
@@ -90,13 +121,13 @@ export default function CategoryScreen() {
           showsHorizontalScrollIndicator={false}
           contentContainerStyle={{ alignItems: 'center', paddingHorizontal: 4 }}
         >
-          {MAIN_CATS.map(cat => (
+          {categories.map(cat => (
             <BouncyBtn
-              key={cat} active={activeMain === cat} onPress={() => setActiveMain(cat)}
+              key={cat.id} active={activeMain === cat.id} onPress={() => setActiveMain(cat.id)}
               glass={false}
-              style={[styles.headerPill, activeMain === cat && styles.activeHeaderPill]}
+              style={[styles.headerPill, activeMain === cat.id && styles.activeHeaderPill]}
             >
-              <Text style={[styles.headerPillText, activeMain === cat && styles.activePillText]}>{cat}</Text>
+              <Text style={[styles.headerPillText, activeMain === cat.id && styles.activePillText]}>{cat.name}</Text>
             </BouncyBtn>
           ))}
         </ScrollView>
@@ -132,8 +163,8 @@ export default function CategoryScreen() {
               onLayout={(e) => setContentHeight(e.nativeEvent.layout.height)}
             >
               <View style={styles.divider} />
-              <View style={styles.sectionBox}><Text style={styles.sectionLabel}>类型</Text><RenderGrid data={FILTERS.genre} type="genre" /></View>
-              <View style={styles.sectionBox}><Text style={styles.sectionLabel}>年份</Text><RenderGrid data={FILTERS.year} type="year" /></View>
+              <View style={styles.sectionBox}><Text style={styles.sectionLabel}>类型</Text><RenderGrid data={filters.genre} type="genre" /></View>
+              <View style={styles.sectionBox}><Text style={styles.sectionLabel}>年份</Text><RenderGrid data={filters.year} type="year" /></View>
               <View style={styles.sliderBox}>
                 <View style={styles.sliderHeader}>
                   <Text style={styles.sectionLabel}>评分</Text>
@@ -153,15 +184,22 @@ export default function CategoryScreen() {
           <Text style={styles.resultTitle}>分类结果</Text>
           <BouncyBtn style={styles.sortBtn} glass={true}><Text style={styles.sortText}>最新上映</Text><ChevronDown size={14} color="#666" /></BouncyBtn>
         </View>
-        <View style={styles.movieGrid}>
-          {MOVIES.map(m => (
-            <BouncyBtn key={m.id} style={[styles.movieItem, { width: MOVIE_ITEM_WIDTH }]}>
-              <Image source={{ uri: m.poster }} style={styles.poster} />
-              <GlassView style={styles.scoreBadge} intensity={70}><Text style={styles.scoreText}>{m.score}</Text></GlassView>
-              <Text style={styles.movieTitle} numberOfLines={1}>{m.title}</Text>
-            </BouncyBtn>
-          ))}
-        </View>
+        
+        {loading ? (
+            <View style={{height: 200, justifyContent:'center', alignItems:'center'}}>
+               <ActivityIndicator color="#007AFF" />
+            </View>
+        ) : (
+          <View style={styles.movieGrid}>
+            {movies.map(m => (
+              <BouncyBtn key={m.id} style={[styles.movieItem, { width: MOVIE_ITEM_WIDTH }]} onPress={() => router.push(`/video/${m.id}`)}>
+                <Image source={{ uri: m.poster }} style={styles.poster} />
+                <GlassView style={styles.scoreBadge} intensity={70}><Text style={styles.scoreText}>{m.score}</Text></GlassView>
+                <Text style={styles.movieTitle} numberOfLines={1}>{m.title}</Text>
+              </BouncyBtn>
+            ))}
+          </View>
+        )}
       </ScrollView>
     </View>
   );

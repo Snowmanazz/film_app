@@ -1,35 +1,16 @@
-import React, { useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, Image, Dimensions, TextInput, Platform, KeyboardAvoidingView } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import { View, Text, StyleSheet, ScrollView, Image, Dimensions, TextInput, Platform, KeyboardAvoidingView, ActivityIndicator } from 'react-native';
 import { useLocalSearchParams, useRouter, Stack } from 'expo-router';
 import { Video, ResizeMode } from 'expo-av';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ArrowLeft, Share2, Star, Download, MoreHorizontal, ChevronDown, ChevronUp, Send, MessageCircle, ThumbsUp, Heart } from 'lucide-react-native';
 import MovingBackground from '../../components/MovingBackground';
 import { GlassView, BouncyBtn } from '../../components/IslandComponents';
+import { getVideoDetail, getVideoComments } from '../../app/api/endpoints';
 
 const { width } = Dimensions.get('window');
 const VIDEO_HEIGHT = width * 0.5625; // 16:9
 const REC_ITEM_WIDTH = (width - 40 - 20) / 3 - 0.5;
-
-// === 模拟数据 ===
-const CAST = [
-  { id: 1, name: '克里斯托弗', role: '导演', img: 'https://i.pravatar.cc/150?u=1' },
-  { id: 2, name: '马修·麦康纳', role: '库珀', img: 'https://i.pravatar.cc/150?u=2' },
-  { id: 3, name: '安妮·海瑟薇', role: '布兰德', img: 'https://i.pravatar.cc/150?u=3' },
-  { id: 4, name: '杰西卡', role: '墨菲', img: 'https://i.pravatar.cc/150?u=4' },
-];
-const RECS = [
-  { id: 1, title: '星际迷航', poster: 'https://picsum.photos/id/10/200/300' },
-  { id: 2, title: '太空漫游', poster: 'https://picsum.photos/id/20/200/300' },
-  { id: 3, title: '第三类接触', poster: 'https://picsum.photos/id/30/200/300' },
-];
-const COMMENTS = [
-  { id: 1, user: '星际旅行者', avatar: 'https://i.pravatar.cc/150?u=5', content: '诺兰的又一神作！视觉效果震撼，剧情引人深思。', date: '2天前', likes: 128 },
-  { id: 2, user: '科幻迷', avatar: 'https://i.pravatar.cc/150?u=6', content: '黑洞的特效简直令人惊叹。', date: '1周前', likes: 96 },
-  { id: 3, user: '路人甲', avatar: 'https://i.pravatar.cc/150?u=7', content: '测试评论滚动。', date: '1周前', likes: 2 },
-  { id: 4, user: '路人乙', avatar: 'https://i.pravatar.cc/150?u=8', content: '这里的内容会往下滑，但标题和视频不会动。', date: '1周前', likes: 5 },
-  { id: 5, user: '测试员', avatar: 'https://i.pravatar.cc/150?u=9', content: '多加几条评论撑开高度...', date: '刚刚', likes: 1 },
-];
 
 export default function VideoScreen() {
   const { id } = useLocalSearchParams();
@@ -39,7 +20,44 @@ export default function VideoScreen() {
   const [isLiked, setIsLiked] = useState(false);
   const [isCollected, setIsCollected] = useState(false);
 
+  const [videoData, setVideoData] = useState<any>(null);
+  const [comments, setComments] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    async function loadData() {
+      if (!id) return;
+      try {
+        const [detail, commentsData] = await Promise.all([
+          getVideoDetail(id as string),
+          getVideoComments(id as string)
+        ]);
+        setVideoData(detail);
+        setComments(commentsData.list);
+        
+        // Initial state from API
+        if (detail.userInteraction) {
+           setIsLiked(detail.userInteraction.isLiked);
+           setIsCollected(detail.userInteraction.isCollected);
+        }
+      } catch (e) {
+        console.error("Video detail error", e);
+      } finally {
+        setLoading(false);
+      }
+    }
+    loadData();
+  }, [id]);
+
   const navBarHeight = insets.top + 50;
+
+  if (loading || !videoData) {
+    return (
+      <View style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
+        <ActivityIndicator size="large" color="#007AFF" />
+      </View>
+    );
+  }
 
   return (
       <View style={styles.container}>
@@ -61,7 +79,7 @@ export default function VideoScreen() {
           <View style={{ height: VIDEO_HEIGHT, backgroundColor: '#000' }}>
             <Video
                 style={styles.video}
-                source={{ uri: 'https://d23dyxeqlo5psv.cloudfront.net/big_buck_bunny.mp4' }}
+                source={{ uri: videoData.videoSourceUrl || 'https://d23dyxeqlo5psv.cloudfront.net/big_buck_bunny.mp4' }}
                 useNativeControls
                 resizeMode={ResizeMode.CONTAIN}
                 shouldPlay={false}
@@ -70,13 +88,13 @@ export default function VideoScreen() {
 
           {/* 3. 标题信息区 (现在固定在这里，不随下面滚动) */}
           <View style={styles.fixedTitleSection}>
-            <Text style={styles.mainTitle} selectable>星际穿越：无限边疆</Text>
+            <Text style={styles.mainTitle} selectable>{videoData.title}</Text>
             <View style={styles.metaRow}>
               <View style={styles.scoreTag}>
-                <Text style={styles.scoreText}>9.8</Text>
+                <Text style={styles.scoreText}>{videoData.score}</Text>
               </View>
-              <Text style={styles.metaText}>2023 · 科幻 · 冒险</Text>
-              <Text style={styles.metaText}>120万次播放</Text>
+              <Text style={styles.metaText}>{videoData.year} · {videoData.tags ? videoData.tags.join(' · ') : ''}</Text>
+              <Text style={styles.metaText}>{videoData.playCount}</Text>
             </View>
           </View>
 
@@ -114,7 +132,7 @@ export default function VideoScreen() {
                 >
                   <CapsuleBtn
                       icon={ThumbsUp}
-                      label={isLiked ? "1.2w" : "点赞"}
+                      label={isLiked ? "已点赞" : "点赞"}
                       active={isLiked}
                       onPress={() => setIsLiked(!isLiked)}
                   />
@@ -133,7 +151,7 @@ export default function VideoScreen() {
                 <GlassView style={styles.card} intensity={40}>
                   <Text style={styles.sectionTitle}>剧情简介</Text>
                   <Text style={styles.descText} numberOfLines={isDescExpanded ? undefined : 3}>
-                    在未来的世界里，地球面临着严重的资源枯竭和环境恶化。一组勇敢的宇航员踏上了穿越虫洞的旅程，寻找人类新的家园...
+                    {videoData.description}
                   </Text>
                   <BouncyBtn glass={false} style={styles.expandBtn} onPress={() => setIsDescExpanded(!isDescExpanded)}>
                     <Text style={styles.expandText}>{isDescExpanded ? '收起' : '展开全部'}</Text>
@@ -142,24 +160,27 @@ export default function VideoScreen() {
                 </GlassView>
 
                 {/* 演职人员 */}
+                {videoData.cast && (
                 <View style={styles.sectionBox}>
                   <Text style={styles.sectionHeader}>演职人员</Text>
                   <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 15 }}>
-                    {CAST.map(c => (
+                    {videoData.cast.map((c: any) => (
                         <View key={c.id} style={styles.castItem}>
-                          <Image source={{ uri: c.img }} style={styles.castAvatar} />
+                          <Image source={{ uri: c.img || c.avatar }} style={styles.castAvatar} />
                           <Text style={styles.castName} numberOfLines={1}>{c.name}</Text>
                           <Text style={styles.castRole} numberOfLines={1}>{c.role}</Text>
                         </View>
                     ))}
                   </ScrollView>
                 </View>
+                )}
 
                 {/* 猜你喜欢 */}
+                {videoData.related && (
                 <View style={styles.sectionBox}>
                   <Text style={styles.sectionHeader}>猜你喜欢</Text>
                   <View style={styles.recGrid}>
-                    {RECS.map(r => (
+                    {videoData.related.map((r: any) => (
                         <BouncyBtn key={r.id} style={styles.recItem} glass={false}>
                           <Image source={{ uri: r.poster }} style={styles.recPoster} />
                           <Text style={styles.recTitle} numberOfLines={1}>{r.title}</Text>
@@ -167,22 +188,29 @@ export default function VideoScreen() {
                     ))}
                   </View>
                 </View>
+                )}
 
                 {/* 评论区 */}
                 <View style={styles.sectionBox}>
-                  <Text style={styles.sectionHeader}>评论 (234)</Text>
-                  {COMMENTS.map(c => (
+                  <Text style={styles.sectionHeader}>评论 ({comments.length})</Text>
+                  {comments.map(c => {
+                    const userName = typeof c.user === 'object' ? c.user?.nickname : c.user;
+                    const userAvatar = typeof c.user === 'object' ? c.user?.avatar : c.avatar;
+                    const dateStr = c.createdAt ? new Date(c.createdAt).toLocaleDateString() : c.date;
+                    
+                    return (
                       <View key={c.id} style={styles.commentItem}>
-                        <Image source={{ uri: c.avatar }} style={styles.commentAvatar} />
+                        <Image source={{ uri: userAvatar || 'https://i.pravatar.cc/150' }} style={styles.commentAvatar} />
                         <View style={{flex: 1}}>
                           <View style={styles.commentHeader}>
-                            <Text style={styles.commentUser}>{c.user}</Text>
-                            <Text style={styles.commentDate}>{c.date}</Text>
+                            <Text style={styles.commentUser}>{userName || 'Unknown'}</Text>
+                            <Text style={styles.commentDate}>{dateStr}</Text>
                           </View>
                           <Text style={styles.commentContent}>{c.content}</Text>
                         </View>
                       </View>
-                  ))}
+                    );
+                  })}
                 </View>
               </View>
             </ScrollView>
